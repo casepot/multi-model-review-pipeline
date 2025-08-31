@@ -1,0 +1,158 @@
+#!/usr/bin/env node
+
+import { Command } from 'commander';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import process from 'node:process';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageDir = dirname(__dirname);
+
+// Load package.json for version
+const packageJson = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
+
+// Create CLI program
+const program = new Command();
+
+program
+  .name('review-pipeline')
+  .description('Multi-model AI code review pipeline')
+  .version(packageJson.version);
+
+// Main review command
+program
+  .command('run')
+  .description('Run the review pipeline on the current repository')
+  .option('-c, --config <path>', 'Path to configuration file', '.reviewrc.json')
+  .option('-p, --providers <providers>', 'Comma-separated list of providers', 'claude,codex,gemini')
+  .option('-t, --test-cmd <cmd>', 'Test command to run')
+  .option('--parallel', 'Run providers in parallel', true)
+  .option('--no-parallel', 'Run providers sequentially')
+  .option('--timeout <seconds>', 'Global timeout in seconds', '600')
+  .option('--project-root <path>', 'Project root directory', process.cwd())
+  .option('--verbose', 'Enable verbose output', false)
+  .action(async (options) => {
+    // Set environment variables for the review script
+    const env = {
+      ...process.env,
+      PROJECT_ROOT: options.projectRoot,
+      CONFIG_FILE: options.config,
+      ENABLED_PROVIDERS: options.providers,
+      REVIEW_PARALLEL: options.parallel ? 'true' : 'false',
+      REVIEW_TIMEOUT: options.timeout,
+      VERBOSE: options.verbose ? 'true' : 'false'
+    };
+
+    if (options.testCmd) {
+      env.TEST_CMD = options.testCmd;
+    }
+
+    // Run the review-local.sh script with the environment
+    const reviewScript = join(packageDir, 'scripts', 'review-local.sh');
+    const child = spawn('bash', [reviewScript], {
+      env,
+      stdio: 'inherit',
+      cwd: options.projectRoot
+    });
+
+    child.on('exit', (code) => {
+      process.exit(code || 0);
+    });
+
+    child.on('error', (err) => {
+      console.error('Failed to run review pipeline:', err);
+      process.exit(1);
+    });
+  });
+
+// Auth check command
+program
+  .command('auth-check')
+  .description('Check authentication status for all providers')
+  .action(async () => {
+    const authScript = join(packageDir, 'scripts', 'auth-check.sh');
+    const child = spawn('bash', [authScript], {
+      stdio: 'inherit',
+      cwd: process.cwd()
+    });
+
+    child.on('exit', (code) => {
+      process.exit(code || 0);
+    });
+  });
+
+// Validate command
+program
+  .command('validate')
+  .description('Validate configuration')
+  .option('-c, --config <path>', 'Path to configuration file', '.reviewrc.json')
+  .action(async (options) => {
+    try {
+      const { default: ConfigLoader } = await import('../lib/config-loader.js');
+      const loader = new ConfigLoader({
+        projectConfigPath: join(process.cwd(), options.config)
+      });
+      
+      await loader.load();
+      
+      if (loader.errors.length > 0) {
+        console.error('Configuration errors:');
+        loader.errors.forEach(err => console.error(`  - ${err}`));
+        process.exit(1);
+      }
+      
+      if (loader.warnings.length > 0) {
+        console.warn('Configuration warnings:');
+        loader.warnings.forEach(warn => console.warn(`  - ${warn}`));
+      }
+      
+      console.log('✓ Configuration is valid');
+    } catch (error) {
+      console.error('Failed to validate configuration:', error.message);
+      process.exit(1);
+    }
+  });
+
+// Show config command
+program
+  .command('show-config')
+  .description('Show resolved configuration')
+  .option('-c, --config <path>', 'Path to configuration file', '.reviewrc.json')
+  .action(async (options) => {
+    try {
+      const { default: ConfigLoader } = await import('../lib/config-loader.js');
+      const loader = new ConfigLoader({
+        projectConfigPath: join(process.cwd(), options.config)
+      });
+      
+      const config = await loader.load();
+      console.log(JSON.stringify(config, null, 2));
+    } catch (error) {
+      console.error('Failed to load configuration:', error.message);
+      process.exit(1);
+    }
+  });
+
+// Build command for debugging
+program
+  .command('build-command <provider>')
+  .description('Build and show the command for a provider (for debugging)')
+  .action(async (provider) => {
+    try {
+      const { default: CommandBuilder } = await import('../lib/command-builder.js');
+      const builder = new CommandBuilder();
+      const command = await builder.buildCommand(provider);
+      console.log('Command:', command.command);
+      console.log('Arguments:', command.args);
+      console.log('Environment:', command.env);
+    } catch (error) {
+      console.error('Failed to build command:', error.message);
+      process.exit(1);
+    }
+  });
+
+// Parse command line arguments
+program.parse(process.argv);

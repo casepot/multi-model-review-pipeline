@@ -1,0 +1,222 @@
+name: 'Multi-Model Review Pipeline'
+description: 'Orchestrate multi-model AI code reviews with Claude, Codex, and Gemini'
+author: 'Multi-Model Review Pipeline Contributors'
+
+branding:
+  icon: 'code'
+  color: 'blue'
+
+inputs:
+  config-file:
+    description: 'Path to configuration file'
+    required: false
+    default: '.reviewrc.json'
+  
+  providers:
+    description: 'Comma-separated list of providers to use'
+    required: false
+    default: 'claude,codex,gemini'
+  
+  test-command:
+    description: 'Test command to run before review'
+    required: false
+    default: ''
+  
+  parallel:
+    description: 'Run providers in parallel'
+    required: false
+    default: 'true'
+  
+  timeout:
+    description: 'Global timeout in seconds'
+    required: false
+    default: '600'
+  
+  fail-on-must-fix:
+    description: 'Fail the action if must-fix issues are found'
+    required: false
+    default: 'true'
+  
+  comment-on-pr:
+    description: 'Post review summary as PR comment'
+    required: false
+    default: 'true'
+  
+  artifact-reports:
+    description: 'Upload reports as artifacts'
+    required: false
+    default: 'true'
+  
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+
+outputs:
+  gate-status:
+    description: 'Review gate status (pass/fail)'
+    value: ${{ steps.review.outputs.gate-status }}
+  
+  must-fix-count:
+    description: 'Number of must-fix issues found'
+    value: ${{ steps.review.outputs.must-fix-count }}
+  
+  summary-url:
+    description: 'URL to the review summary artifact'
+    value: ${{ steps.upload.outputs.artifact-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+        cache-dependency-path: '${{ github.action_path }}/package-lock.json'
+    
+    - name: Install Review Pipeline
+      shell: bash
+      run: |
+        cd "${{ github.action_path }}"
+        npm ci --no-audit --no-fund
+    
+    - name: Validate Configuration
+      shell: bash
+      run: |
+        cd "${{ github.workspace }}"
+        if [ -f "${{ inputs.config-file }}" ]; then
+          "${{ github.action_path }}/bin/review-pipeline" validate --config "${{ inputs.config-file }}"
+        else
+          echo "No project configuration found, using defaults"
+        fi
+    
+    - name: Check Provider Authentication
+      shell: bash
+      run: |
+        # Ensure provider CLIs are in PATH
+        if [ -x "$HOME/.claude/local/claude" ]; then
+          export PATH="$HOME/.claude/local:$PATH"
+        fi
+        
+        # Run auth check
+        "${{ github.action_path }}/bin/review-pipeline" auth-check
+    
+    - name: Build Review Context
+      shell: bash
+      id: context
+      run: |
+        set -euo pipefail
+        
+        # Create workspace directories
+        mkdir -p "${{ github.action_path }}/workspace/context"
+        mkdir -p "${{ github.action_path }}/workspace/reports"
+        
+        # Get PR metadata if available
+        if [ -n "${{ github.event.pull_request.number }}" ]; then
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          
+          # Generate diff for PR
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" > "${{ github.action_path }}/workspace/context/diff.patch"
+          git diff --name-only "origin/${{ github.event.pull_request.base.ref }}...HEAD" > "${{ github.action_path }}/workspace/context/files.txt"
+        else
+          # Manual trigger - use last commit
+          git diff HEAD~1 > "${{ github.action_path }}/workspace/context/diff.patch" || echo "No diff available" > "${{ github.action_path }}/workspace/context/diff.patch"
+          git diff --name-only HEAD~1 > "${{ github.action_path }}/workspace/context/files.txt" || echo "No files changed" > "${{ github.action_path }}/workspace/context/files.txt"
+        fi
+        
+        # Run tests if configured
+        if [ -n "${{ inputs.test-command }}" ]; then
+          echo "Running tests: ${{ inputs.test-command }}"
+          set +e
+          timeout 300 sh -c "${{ inputs.test-command }}" > "${{ github.action_path }}/workspace/context/tests.txt" 2>&1
+          echo "Test exit code: $?" >> "${{ github.action_path }}/workspace/context/tests.txt"
+          set -e
+        fi
+    
+    - name: Run Review Pipeline
+      shell: bash
+      id: review
+      env:
+        PROJECT_ROOT: ${{ github.workspace }}
+        PACKAGE_DIR: ${{ github.action_path }}
+        CONFIG_FILE: ${{ inputs.config-file }}
+        ENABLED_PROVIDERS: ${{ inputs.providers }}
+        REVIEW_PARALLEL: ${{ inputs.parallel }}
+        REVIEW_TIMEOUT: ${{ inputs.timeout }}
+        TEST_CMD: ${{ inputs.test-command }}
+      run: |
+        cd "${{ github.workspace }}"
+        
+        # Run the review pipeline
+        "${{ github.action_path }}/bin/review-pipeline" run \
+          --config "${{ inputs.config-file }}" \
+          --providers "${{ inputs.providers }}" \
+          --timeout "${{ inputs.timeout }}" \
+          ${{ inputs.parallel == 'true' && '--parallel' || '--no-parallel' }} \
+          --project-root "${{ github.workspace }}"
+        
+        # Extract gate status
+        if [ -f "${{ github.action_path }}/workspace/gate.txt" ]; then
+          GATE_STATUS=$(cat "${{ github.action_path }}/workspace/gate.txt")
+          echo "gate-status=$GATE_STATUS" >> "$GITHUB_OUTPUT"
+        else
+          echo "gate-status=unknown" >> "$GITHUB_OUTPUT"
+        fi
+        
+        # Count must-fix issues
+        MUST_FIX_COUNT=0
+        for report in "${{ github.action_path }}/workspace/reports"/*.json; do
+          if [ -f "$report" ]; then
+            count=$(jq -r '.summary.must_fix_count // 0' "$report" 2>/dev/null || echo 0)
+            MUST_FIX_COUNT=$((MUST_FIX_COUNT + count))
+          fi
+        done
+        echo "must-fix-count=$MUST_FIX_COUNT" >> "$GITHUB_OUTPUT"
+    
+    - name: Upload Reports
+      if: inputs.artifact-reports == 'true'
+      uses: actions/upload-artifact@v4
+      id: upload
+      with:
+        name: review-reports-${{ github.sha }}
+        path: |
+          ${{ github.action_path }}/workspace/reports/
+          ${{ github.action_path }}/workspace/summary.md
+          ${{ github.action_path }}/workspace/gate.txt
+        retention-days: 30
+        if-no-files-found: warn
+    
+    - name: Comment on PR
+      if: inputs.comment-on-pr == 'true' && github.event.pull_request.number != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        if [ -f "${{ github.action_path }}/workspace/summary.md" ]; then
+          # Check if we already commented on this SHA
+          existing=$(gh pr view ${{ github.event.pull_request.number }} --json comments \
+            | jq -r '.comments[].body' \
+            | grep -c "SHA: ${{ github.sha }}" || true)
+          
+          if [ "$existing" -eq 0 ]; then
+            # Add artifact link to summary
+            {
+              cat "${{ github.action_path }}/workspace/summary.md"
+              echo ""
+              echo "---"
+              echo "📎 [Download full reports](${{ steps.upload.outputs.artifact-url }})"
+              echo "<!-- Multi-Model Review SHA: ${{ github.sha }} -->"
+            } | gh pr comment ${{ github.event.pull_request.number }} --body-file -
+          fi
+        fi
+    
+    - name: Check Gate Status
+      if: inputs.fail-on-must-fix == 'true'
+      shell: bash
+      run: |
+        if [ "${{ steps.review.outputs.gate-status }}" = "fail" ]; then
+          echo "::error::Review gate failed - must-fix issues found"
+          exit 1
+        fi

@@ -1,0 +1,55 @@
+name: PR Multi-Model Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: self-hosted  # Requires authenticated provider CLIs
+    timeout-minutes: 45
+    if: github.event.pull_request.draft == false
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper diffs
+      
+      - name: Run Multi-Model Review
+        uses: multi-model/review-pipeline-action@v1
+        with:
+          # Configuration file in your repository
+          config-file: .reviewrc.json
+          
+          # Repository variable for test command (security: prevents PR control)
+          test-command: ${{ vars.TEST_CMD }}
+          
+          # Providers to use (can be overridden by config)
+          providers: claude,codex,gemini
+          
+          # Parallel execution for speed
+          parallel: true
+          
+          # Timeout for all providers
+          timeout: 600
+          
+          # Fail if must-fix issues found
+          fail-on-must-fix: true
+          
+          # Post summary as PR comment
+          comment-on-pr: true
+          
+          # Upload detailed reports as artifacts
+          artifact-reports: true
+      
+      - name: Review Results
+        if: always()
+        run: |
+          echo "Gate Status: ${{ steps.review.outputs.gate-status }}"
+          echo "Must-Fix Issues: ${{ steps.review.outputs.must-fix-count }}"

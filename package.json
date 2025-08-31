@@ -1,0 +1,71 @@
+{
+  "name": "@multi-model/review-pipeline",
+  "version": "1.0.0",
+  "description": "Multi-model AI code review pipeline with provider-agnostic orchestration",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "import": "./lib/index.js"
+    },
+    "./config": "./lib/config-loader.js",
+    "./executor": "./lib/execute-provider.js",
+    "./builder": "./lib/command-builder.js"
+  },
+  "bin": {
+    "review-pipeline": "./bin/review-pipeline"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "scripts/",
+    "config/",
+    "prompts/",
+    "templates/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "ajv": "^8.0.0",
+    "ajv-formats": "^3.0.0",
+    "commander": "^12.0.0",
+    "chalk": "^5.3.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "@vitest/ui": "^1.6.0"
+  },
+  "scripts": {
+    "review": "node bin/review-pipeline",
+    "auth-check": "bash scripts/auth-check.sh",
+    "test": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm test"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/multi-model/review-pipeline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/multi-model/review-pipeline/issues"
+  },
+  "homepage": "https://github.com/multi-model/review-pipeline#readme",
+  "keywords": [
+    "code-review",
+    "ai",
+    "claude",
+    "codex",
+    "gemini",
+    "github-actions",
+    "pr-review",
+    "multi-model",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT"
+}
