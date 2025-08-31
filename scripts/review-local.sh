@@ -94,16 +94,8 @@ if [ -f "$PACKAGE_DIR/scripts/generate-enhanced-diff.js" ]; then
   node "$PACKAGE_DIR/scripts/generate-enhanced-diff.js" 2>/dev/null || echo "Failed to generate enhanced diff"
 fi
 
-# Create mock PR metadata
-cat > "$PROJECT_ROOT/.review-pipeline/workspace/context/pr.json" <<JSON
-{
-  "repo": "$(basename "$PROJECT_ROOT")",
-  "number": 0,
-  "head_sha": "$(cd "$PROJECT_ROOT" && git rev-parse HEAD 2>/dev/null || echo 'LOCAL')",
-  "branch": "$(cd "$PROJECT_ROOT" && git branch --show-current 2>/dev/null || echo 'LOCAL')",
-  "link": "https://local/pr"
-}
-JSON
+# Generate PR context (works for both GitHub Actions and local)
+bash "$PACKAGE_DIR/scripts/generate-pr-context.sh"
 
 # Run tests if enabled
 echo "Running tests..."

@@ -27,13 +27,13 @@
     },
     "pr": {
       "type": "object",
-      "required": ["repo", "number", "head_sha", "branch", "link"],
+      "required": ["repo", "number", "head_sha", "branch"],
       "properties": {
         "repo": { "type": "string" },
         "number": { "type": ["number", "integer"] },
         "head_sha": { "type": "string" },
         "branch": { "type": "string" },
-        "link": { "type": "string", "format": "uri" }
+        "link": { "type": "string" }
       }
     },
     "summary": {
