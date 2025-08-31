@@ -30,8 +30,8 @@ fi
 # Run auth check
 bash "$PACKAGE_DIR/scripts/auth-check.sh" || exit 1
 
-# Create workspace directories
-mkdir -p "$PACKAGE_DIR/workspace/context" "$PACKAGE_DIR/workspace/reports"
+# Create workspace directories in project directory
+mkdir -p "$PROJECT_ROOT/.review-pipeline/workspace/context" "$PROJECT_ROOT/.review-pipeline/workspace/reports"
 
 # Load configuration using Node.js config loader
 echo "Loading configuration..."
@@ -80,14 +80,14 @@ echo "Building review context..."
 
 # Get diff against default branch (from PROJECT_ROOT)
 DEFAULT_BRANCH=$(cd "$PROJECT_ROOT" && git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
-(cd "$PROJECT_ROOT" && git diff --patch "origin/$DEFAULT_BRANCH" > "$PACKAGE_DIR/workspace/context/diff.patch" 2>/dev/null) || \
-  (cd "$PROJECT_ROOT" && git diff --patch HEAD~1 > "$PACKAGE_DIR/workspace/context/diff.patch" 2>/dev/null) || \
-  echo "No diff available" > "$PACKAGE_DIR/workspace/context/diff.patch"
+(cd "$PROJECT_ROOT" && git diff --patch "origin/$DEFAULT_BRANCH" > "$PROJECT_ROOT/.review-pipeline/workspace/context/diff.patch" 2>/dev/null) || \
+  (cd "$PROJECT_ROOT" && git diff --patch HEAD~1 > "$PROJECT_ROOT/.review-pipeline/workspace/context/diff.patch" 2>/dev/null) || \
+  echo "No diff available" > "$PROJECT_ROOT/.review-pipeline/workspace/context/diff.patch"
 
 # Get changed files (from PROJECT_ROOT)
-(cd "$PROJECT_ROOT" && git diff --name-only "origin/$DEFAULT_BRANCH" 2>/dev/null > "$PACKAGE_DIR/workspace/context/files.txt") || \
-  (cd "$PROJECT_ROOT" && git diff --name-only HEAD~1 2>/dev/null > "$PACKAGE_DIR/workspace/context/files.txt") || \
-  echo "No files changed" > "$PACKAGE_DIR/workspace/context/files.txt"
+(cd "$PROJECT_ROOT" && git diff --name-only "origin/$DEFAULT_BRANCH" 2>/dev/null > "$PROJECT_ROOT/.review-pipeline/workspace/context/files.txt") || \
+  (cd "$PROJECT_ROOT" && git diff --name-only HEAD~1 2>/dev/null > "$PROJECT_ROOT/.review-pipeline/workspace/context/files.txt") || \
+  echo "No files changed" > "$PROJECT_ROOT/.review-pipeline/workspace/context/files.txt"
 
 # Generate enhanced diff with line numbers
 if [ -f "$PACKAGE_DIR/scripts/generate-enhanced-diff.js" ]; then
@@ -95,7 +95,7 @@ if [ -f "$PACKAGE_DIR/scripts/generate-enhanced-diff.js" ]; then
 fi
 
 # Create mock PR metadata
-cat > "$PACKAGE_DIR/workspace/context/pr.json" <<JSON
+cat > "$PROJECT_ROOT/.review-pipeline/workspace/context/pr.json" <<JSON
 {
   "repo": "$(basename "$PROJECT_ROOT")",
   "number": 0,
@@ -109,11 +109,11 @@ JSON
 echo "Running tests..."
 if [ -n "$TEST_CMD" ]; then
   set +e
-  echo "\$ $TEST_CMD" > "$PACKAGE_DIR/workspace/context/tests.txt"
+  echo "\$ $TEST_CMD" > "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt"
   # Use sh -c to match workflow implementation (TODO: parse into array for safety)
-  (cd "$PROJECT_ROOT" && timeout 300 sh -c "set -e; $TEST_CMD") >> "$PACKAGE_DIR/workspace/context/tests.txt" 2>&1
+  (cd "$PROJECT_ROOT" && timeout 300 sh -c "set -e; $TEST_CMD") >> "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt" 2>&1
   TEST_EXIT_CODE=$?
-  echo "== exit:$TEST_EXIT_CODE ==" >> "$PACKAGE_DIR/workspace/context/tests.txt"
+  echo "== exit:$TEST_EXIT_CODE ==" >> "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt"
   set -e
   
   if [ $TEST_EXIT_CODE -eq 0 ]; then
@@ -122,7 +122,7 @@ if [ -n "$TEST_CMD" ]; then
     ylw "⚠ Tests failed with exit code $TEST_EXIT_CODE"
   fi
 else
-  echo "No test command configured" > "$PACKAGE_DIR/workspace/context/tests.txt"
+  echo "No test command configured" > "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt"
 fi
 
 # Unset API key environment variables
@@ -220,8 +220,8 @@ fi
 # Show results
 echo ""
 blu "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-if [ -f "$PACKAGE_DIR/workspace/gate.txt" ]; then
-  gate_status=$(cat "$PACKAGE_DIR/workspace/gate.txt")
+if [ -f "$PROJECT_ROOT/.review-pipeline/workspace/gate.txt" ]; then
+  gate_status=$(cat "$PROJECT_ROOT/.review-pipeline/workspace/gate.txt")
   if [ "$gate_status" = "pass" ]; then
     grn "  Gate: PASS ✓"
   else
@@ -233,16 +233,16 @@ fi
 blu "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "See detailed results in:"
-echo "  • $PACKAGE_DIR/workspace/summary.md"
-echo "  • $PACKAGE_DIR/workspace/reports/*.json"
+echo "  • $PROJECT_ROOT/.review-pipeline/workspace/summary.md"
+echo "  • $PROJECT_ROOT/.review-pipeline/workspace/reports/*.json"
 echo ""
 
 # Show summary if it exists
-if [ -f "$PACKAGE_DIR/workspace/summary.md" ]; then
+if [ -f "$PROJECT_ROOT/.review-pipeline/workspace/summary.md" ]; then
   echo "Summary preview:"
   echo "────────────────"
-  head -n 20 "$PACKAGE_DIR/workspace/summary.md"
-  if [ $(wc -l < "$PACKAGE_DIR/workspace/summary.md") -gt 20 ]; then
+  head -n 20 "$PROJECT_ROOT/.review-pipeline/workspace/summary.md"
+  if [ $(wc -l < "$PROJECT_ROOT/.review-pipeline/workspace/summary.md") -gt 20 ]; then
     echo "... (truncated, see full summary in workspace/summary.md)"
   fi
 fi

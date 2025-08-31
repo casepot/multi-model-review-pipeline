@@ -9,10 +9,14 @@ import addFormats from 'ajv-formats';
 const scriptDir = path.dirname(new URL(import.meta.url).pathname);
 const packageDir = path.dirname(scriptDir);
 
+// Use PROJECT_ROOT from environment or current directory
+const projectRoot = process.env.PROJECT_ROOT || process.cwd();
+const workspaceDir = path.join(projectRoot, '.review-pipeline', 'workspace');
+
 const schemaPath = path.join(packageDir, 'config', 'schemas', 'report.schema.json');
-const reportsDir = path.join(packageDir, 'workspace', 'reports');
-const outSummary = path.join(packageDir, 'workspace', 'summary.md');
-const outGate = path.join(packageDir, 'workspace', 'gate.txt');
+const reportsDir = path.join(workspaceDir, 'reports');
+const outSummary = path.join(workspaceDir, 'summary.md');
+const outGate = path.join(workspaceDir, 'gate.txt');
 
 const mustFiles = {
   'claude-code': path.join(reportsDir, 'claude-code.json'),
@@ -34,7 +38,7 @@ const errors = [];
 const reportStatus = {};
 
 // Also check for raw outputs
-const rawDir = path.join(packageDir, 'workspace', 'reports', 'raw');
+const rawDir = path.join(workspaceDir, 'reports', 'raw');
 const rawFiles = {};
 try {
   const rawEntries = await fs.readdir(rawDir).catch(() => []);
