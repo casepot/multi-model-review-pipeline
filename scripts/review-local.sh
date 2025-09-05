@@ -100,16 +100,35 @@ bash "$PACKAGE_DIR/scripts/generate-pr-context.sh"
 # Run tests if enabled
 echo "Running tests..."
 if [ -n "$TEST_CMD" ]; then
-  set +e
-  echo "\$ $TEST_CMD" > "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt"
-  # Use sh -c to match workflow implementation (TODO: parse into array for safety)
-  (cd "$PROJECT_ROOT" && timeout 300 sh -c "set -e; $TEST_CMD") >> "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt" 2>&1
-  TEST_EXIT_CODE=$?
-  echo "== exit:$TEST_EXIT_CODE ==" >> "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt"
-  set -e
+  # Check if enhanced test runner is available
+  ENHANCED_RUNNER="$PACKAGE_DIR/scripts/run-tests-enhanced.sh"
+  if [ -x "$ENHANCED_RUNNER" ]; then
+    # Use enhanced runner that generates both text and JSON outputs
+    echo "Using enhanced test runner for structured output..."
+    set +e
+    bash "$ENHANCED_RUNNER"
+    TEST_EXIT_CODE=$?
+    set -e
+  else
+    # Fallback to original implementation
+    set +e
+    echo "\$ $TEST_CMD" > "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt"
+    # Use sh -c to match workflow implementation (TODO: parse into array for safety)
+    (cd "$PROJECT_ROOT" && timeout 300 sh -c "set -e; $TEST_CMD") >> "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt" 2>&1
+    TEST_EXIT_CODE=$?
+    echo "== exit:$TEST_EXIT_CODE ==" >> "$PROJECT_ROOT/.review-pipeline/workspace/context/tests.txt"
+    set -e
+  fi
   
   if [ $TEST_EXIT_CODE -eq 0 ]; then
     grn "✓ Tests passed"
+    # Show coverage if available
+    if [ -f "$PROJECT_ROOT/.review-pipeline/workspace/context/test-summary.json" ]; then
+      COVERAGE=$(jq -r '.coverage.percentage // "N/A"' "$PROJECT_ROOT/.review-pipeline/workspace/context/test-summary.json" 2>/dev/null || echo "N/A")
+      if [ "$COVERAGE" != "N/A" ] && [ "$COVERAGE" != "null" ]; then
+        echo "  Coverage: ${COVERAGE}%"
+      fi
+    fi
   else
     ylw "⚠ Tests failed with exit code $TEST_EXIT_CODE"
   fi
