@@ -1,5 +1,7 @@
 # Multi-Model Review Pipeline
 
+(Human Note: This is a quick and dirty way to get PR reviews done automatically by the three major private provider's CLI programs using a subscription rather than API keys, to take advantage of their generous limits before they inevitably restrict usage down the line when funds dry up. Codex and Gemini were simple to integrate with GH actions, Claude was more annoying and required a keychain workaround and local github runner which is a security liability. For the next iteration of this I would simplify and limit this to the review-local.sh script, and go from there. JSON output and parsing was a brittle point as well, as each provider has different ways of providing structured output and even then this fails maybe 1/5 times for Claude and Gemini. I would also re look at configuration and surface the context packet configuration, allowing devs to create scripts that would build artifacts for the context packet, perhaps following some schema or rules etc.) 
+
 A powerful, provider-agnostic code review pipeline that orchestrates multiple AI models (Claude, Codex, Gemini) to provide comprehensive PR reviews. Designed for self-hosted runners with local authentication.
 
 ## Features
